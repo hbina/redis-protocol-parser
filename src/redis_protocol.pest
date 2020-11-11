@@ -1,0 +1,56 @@
+// Follows the description provided here https://redis.io/topics/protocol
+
+crlf = _{
+    "\r\n"
+}
+
+text_content = {
+    (!(NEWLINE) ~ ANY)*
+}
+
+number_content = {
+    ASCII_DIGIT+
+}
+
+resp = {
+    simple_string | errors | integers | bulk_strings | arrays
+}
+
+simple_string = {
+    "+" ~ text_content ~ crlf
+}
+
+
+// We could narrow this down to [ERROR_TYPE][ ][ERROR MESSAGE]
+// But lets keep it simple and let the library do this.
+errors = {
+    "-" ~ text_content ~ crlf
+}
+
+integers = {
+    ":" ~ number_content ~ crlf
+}
+
+bulk_strings = {
+    null_bulk_strings | some_bulk_strings
+}
+
+null_bulk_strings = {
+    "$" ~ "-1" ~ crlf
+}
+
+some_bulk_strings = {
+    "$" ~ number_content ~ crlf ~ text_content ~ crlf
+}
+
+arrays = {
+    null_arrays | some_arrays
+}
+
+null_arrays = {
+    "*" ~ "-1" ~ crlf
+}
+
+some_arrays = {
+    "*" ~ number_content ~ crlf ~ resp*
+}
