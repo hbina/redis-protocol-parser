@@ -13,7 +13,10 @@ pub enum RESP<'a> {
 
 #[derive(Debug)]
 pub enum RError {
-    Internal,
+    UnknownSymbol(char),
+    EmptyInput,
+    NoCrlf,
+    IncorrectFormat,
 }
 
 impl std::fmt::Display for RError {
@@ -26,7 +29,6 @@ impl<'a> std::error::Error for RError {}
 
 impl RedisProtocolParser {
     pub fn parse_resp(input: &[u8]) -> Result<(RESP, &[u8])> {
-        println!("parse_resp:{:?}", std::str::from_utf8(input).unwrap());
         let mut iterator = input.iter();
         if let Some(first) = iterator.next() {
             let first = *first as char;
@@ -36,11 +38,11 @@ impl RedisProtocolParser {
                 '$' => RedisProtocolParser::parse_bulk_strings(input)?,
                 '*' => RedisProtocolParser::parse_arrays(input)?,
                 '-' => RedisProtocolParser::parse_errors(input)?,
-                _ => panic!("Invalid input"),
+                symbol => return Err(RError::UnknownSymbol(symbol)),
             };
             Ok((resp, left))
         } else {
-            Err(RError::Internal)
+            Err(RError::EmptyInput)
         }
     }
 
@@ -50,7 +52,7 @@ impl RedisProtocolParser {
                 return Ok((&input[1..index], &input[index + 2..]));
             }
         }
-        Err(RError::Internal)
+        Err(RError::NoCrlf)
     }
 
     pub fn parse_simple_string(input: &[u8]) -> Result<(RESP, &[u8])> {
@@ -75,7 +77,7 @@ impl RedisProtocolParser {
         // Checks that the provided length is correct.
         // `sizes` does not consider the two crlf's so we have to add them.
         if sizes > input.len() {
-            return Err(RError::Internal);
+            return Err(RError::IncorrectFormat);
         } else {
             return Ok((RESP::BulkString(&input[..sizes]), &input[sizes + 2..]));
         }
