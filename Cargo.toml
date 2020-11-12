@@ -6,3 +6,8 @@ edition = "2018"
 license = "MIT"
 description = "REdis Syntax Protocol (RESP) parser library without any dependency."
 repository = "https://github.com/hbina/redis-protocol-parser"
+
+[dev-dependencies]
+bytes = "0.6.0"
+rand = "0.7.3"
+lazy_static = "1.4.0"
