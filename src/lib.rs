@@ -1,8 +1,8 @@
 pub type Result<'a> = std::result::Result<(RESP<'a>, &'a [u8]), RError>;
 
 const NIL_VALUE_SIZE: usize = 4;
-const CR: u8 = '\r' as u8;
-const LF: u8 = '\n' as u8;
+const CR: u8 = b'\r';
+const LF: u8 = b'\n';
 
 pub struct RedisProtocolParser;
 
@@ -125,7 +125,7 @@ impl RedisProtocolParser {
 
     pub fn parse_bulk_strings(input: &[u8]) -> Result {
         // Check Null Strings.
-        return if RedisProtocolParser::check_null_value(input) {
+        if RedisProtocolParser::check_null_value(input) {
             Ok((RESP::Nil, &input[NIL_VALUE_SIZE..]))
         } else {
             let (size_str, input_after_size) =
@@ -139,19 +139,15 @@ impl RedisProtocolParser {
             } else {
                 Err(RError::incorrect_format())
             }
-        };
+        }
     }
 
     fn check_crlf_at_index(input: &[u8], index: usize) -> bool {
-        input[index] == '\r' as u8 && input[index + 1] == '\n' as u8
+        input[index] == b'\r' && input[index + 1] == b'\n'
     }
 
     fn check_null_value(input: &[u8]) -> bool {
-        input.len() >= 4
-            && input[0] == '-' as u8
-            && input[1] == '1' as u8
-            && input[2] == CR
-            && input[3] == LF
+        input.len() >= 4 && input[0] == b'-' && input[1] == b'1' && input[2] == CR && input[3] == LF
     }
 
     pub fn parse_arrays(input: &[u8]) -> Result {
