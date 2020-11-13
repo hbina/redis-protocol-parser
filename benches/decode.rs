@@ -62,7 +62,7 @@ pub fn rand_array(len: usize, null_every: usize, str_len: usize) -> BytesMut {
     })
 }
 
-pub fn decode_bytes(input: &[u8]) -> std::result::Result<(), redis_protocol_parser::RError<'_>> {
+pub fn decode_bytes(input: &[u8]) -> std::result::Result<(), redis_protocol_parser::RError> {
     redis_protocol_parser::RedisProtocolParser::parse_resp(input)?;
     Ok(())
 }
