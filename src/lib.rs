@@ -1,4 +1,8 @@
-pub type Result<'a> = std::result::Result<(RESP<'a>, &'a [u8]), RError<'a>>;
+pub type Result<'a> = std::result::Result<(RESP<'a>, &'a [u8]), RError>;
+
+const NIL_VALUE_SIZE: usize = 4;
+const CR: u8 = '\r' as u8;
+const LF: u8 = '\n' as u8;
 
 pub struct RedisProtocolParser;
 
@@ -8,10 +12,11 @@ pub enum RESP<'a> {
     Error(&'a [u8]),
     Integer(&'a [u8]),
     BulkString(&'a [u8]),
+    Nil,
     Array(Vec<RESP<'a>>),
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum RErrorType {
     // Unknown symbol at index
     UnknownSymbol,
@@ -21,79 +26,89 @@ pub enum RErrorType {
     NoCrlf,
     // Incorrect format detected
     IncorrectFormat,
+    Other(Box<dyn std::error::Error>),
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub struct RError<'a> {
-    input: &'a [u8],
+#[derive(Debug)]
+pub struct RError {
     err_type: RErrorType,
 }
 
-impl<'a> RError<'a> {
-    fn unknown_symbol(input: &'a [u8]) -> Self {
+impl RError {
+    fn unknown_symbol() -> Self {
         Self {
-            input,
             err_type: RErrorType::UnknownSymbol,
         }
     }
 
-    fn empty_input(input: &'a [u8]) -> Self {
+    fn empty_input() -> Self {
         Self {
-            input,
             err_type: RErrorType::EmptyInput,
         }
     }
 
-    fn no_crlf(input: &'a [u8]) -> Self {
+    fn no_crlf() -> Self {
         Self {
-            input,
             err_type: RErrorType::NoCrlf,
         }
     }
-    fn incorrect_format(input: &'a [u8]) -> Self {
+    fn incorrect_format() -> Self {
         Self {
-            input,
             err_type: RErrorType::IncorrectFormat,
         }
     }
 }
 
-impl<'a> std::fmt::Display for RError<'a> {
+impl<'a> std::fmt::Display for RError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self)
     }
 }
 
-impl<'a> std::error::Error for RError<'a> {}
+impl<'a> std::error::Error for RError {}
+
+impl<'a> From<std::str::Utf8Error> for RError {
+    fn from(from: std::str::Utf8Error) -> Self {
+        Self {
+            err_type: RErrorType::Other(Box::new(from)),
+        }
+    }
+}
+
+impl<'a> From<std::num::ParseIntError> for RError {
+    fn from(from: std::num::ParseIntError) -> Self {
+        Self {
+            err_type: RErrorType::Other(Box::new(from)),
+        }
+    }
+}
 
 impl RedisProtocolParser {
     pub fn parse_resp(input: &[u8]) -> Result {
-        let mut iterator = input.iter();
-        if let Some(first) = iterator.next() {
+        if let Some(first) = input.get(0) {
             let first = *first as char;
+            let input = &input[1..];
             let (resp, left) = match first {
                 '+' => RedisProtocolParser::parse_simple_string(input)?,
                 ':' => RedisProtocolParser::parse_integers(input)?,
                 '$' => RedisProtocolParser::parse_bulk_strings(input)?,
                 '*' => RedisProtocolParser::parse_arrays(input)?,
                 '-' => RedisProtocolParser::parse_errors(input)?,
-                _ => return Err(RError::unknown_symbol(input)),
+                _ => return Err(RError::unknown_symbol()),
             };
             Ok((resp, left))
         } else {
-            Err(RError::empty_input(input))
+            Err(RError::empty_input())
         }
     }
 
-    fn parse_everything_until_crlf(
-        input: &[u8],
-    ) -> std::result::Result<(&[u8], &[u8]), RError<'_>> {
-        for index in 0..input.len() {
-            if RedisProtocolParser::check_crlf_at_index(input, index) {
-                return Ok((&input[1..index], &input[index + 2..]));
+    fn parse_everything_until_crlf(input: &[u8]) -> std::result::Result<(&[u8], &[u8]), RError> {
+        for (index, (first, second)) in input.iter().zip(input.iter().skip(1)).enumerate() {
+            if first == &CR && second == &LF {
+                return Ok((&input[0..index], &input[index + 2..]));
             }
         }
-        Err(RError::no_crlf(input))
+        Err(RError::no_crlf())
     }
 
     pub fn parse_simple_string(input: &[u8]) -> Result {
@@ -109,36 +124,39 @@ impl RedisProtocolParser {
     }
 
     pub fn parse_bulk_strings(input: &[u8]) -> Result {
-        let (size_str, input_after_size) = RedisProtocolParser::parse_everything_until_crlf(input)?;
-        let size = std::str::from_utf8(size_str)
-            .unwrap()
-            .parse::<u64>()
-            .unwrap();
-        let sizes = size as usize;
-        // Checks that the provided length is correct.
-        // `sizes` does not consider the two crlf's so we have to add them.
-        if input_after_size.len() >= sizes + 2
-            && RedisProtocolParser::check_crlf_at_index(input_after_size, sizes)
-        {
-            return Ok((
-                RESP::BulkString(&input_after_size[..sizes]),
-                &input_after_size[sizes + 2..],
-            ));
+        // Check Null Strings.
+        return if RedisProtocolParser::check_null_value(input) {
+            Ok((RESP::Nil, &input[NIL_VALUE_SIZE..]))
         } else {
-            return Err(RError::incorrect_format(input));
-        }
+            let (size_str, input_after_size) =
+                RedisProtocolParser::parse_everything_until_crlf(input)?;
+            let size = std::str::from_utf8(size_str)?.parse::<u64>()? as usize;
+            if RedisProtocolParser::check_crlf_at_index(input_after_size, size) {
+                Ok((
+                    RESP::BulkString(&input_after_size[..size]),
+                    &input_after_size[size + 2..],
+                ))
+            } else {
+                Err(RError::incorrect_format())
+            }
+        };
     }
 
     fn check_crlf_at_index(input: &[u8], index: usize) -> bool {
         input[index] == '\r' as u8 && input[index + 1] == '\n' as u8
     }
 
+    fn check_null_value(input: &[u8]) -> bool {
+        input.len() >= 4
+            && input[0] == '-' as u8
+            && input[1] == '1' as u8
+            && input[2] == CR
+            && input[3] == LF
+    }
+
     pub fn parse_arrays(input: &[u8]) -> Result {
         let (size_str, input) = RedisProtocolParser::parse_everything_until_crlf(input)?;
-        let size = std::str::from_utf8(size_str)
-            .unwrap()
-            .parse::<u64>()
-            .unwrap();
+        let size = std::str::from_utf8(size_str)?.parse::<u64>()?;
         let sizes = size as usize;
         let mut left = input;
         let mut result = Vec::with_capacity(sizes);
@@ -156,7 +174,7 @@ mod test {
     use super::*;
 
     #[test]
-    pub fn test_simple_string() -> std::result::Result<(), RError<'static>> {
+    pub fn test_simple_string() -> std::result::Result<(), RError> {
         let input = "+hello\r\n".as_bytes();
         let (resp, left) = RedisProtocolParser::parse_resp(input)?;
         assert_eq!(resp, RESP::String("hello".as_bytes()));
@@ -165,24 +183,36 @@ mod test {
     }
 
     #[test]
-    pub fn test_errors() -> std::result::Result<(), RError<'static>> {
+    pub fn test_errors() -> std::result::Result<(), RError> {
         let input = "+hello".as_bytes();
         let err = RedisProtocolParser::parse_resp(input).unwrap_err();
-        assert_eq!(err, RError::no_crlf("+hello".as_bytes()));
+        assert!(matches!(err.err_type, RErrorType::NoCrlf));
         let input = "*2\r\n$3\r\nfoo\r\n)hello".as_bytes();
         let err = RedisProtocolParser::parse_resp(input).unwrap_err();
-        assert_eq!(err, RError::unknown_symbol(")hello".as_bytes()));
+        assert!(matches!(err.err_type, RErrorType::UnknownSymbol));
         let input = "".as_bytes();
         let err = RedisProtocolParser::parse_resp(input).unwrap_err();
-        assert_eq!(err, RError::empty_input("".as_bytes()));
+        assert!(matches!(err.err_type, RErrorType::EmptyInput));
         let input = "$4\r\nfoo\r\n".as_bytes();
         let err = RedisProtocolParser::parse_resp(input).unwrap_err();
-        assert_eq!(err, RError::incorrect_format("$4\r\nfoo\r\n".as_bytes()));
+        assert!(matches!(err.err_type, RErrorType::IncorrectFormat));
+        let input = "*2\r\n$3\r\nfoo+hello\r\n".as_bytes();
+        let err = RedisProtocolParser::parse_resp(input).unwrap_err();
+        assert!(matches!(err.err_type, RErrorType::IncorrectFormat));
         Ok(())
     }
 
     #[test]
-    pub fn test_bulk_string() -> std::result::Result<(), RError<'static>> {
+    pub fn test_nil() -> std::result::Result<(), RError> {
+        let input = "$-1\r\n".as_bytes();
+        let (resp, left) = RedisProtocolParser::parse_resp(input)?;
+        assert_eq!(resp, RESP::Nil);
+        assert!(left.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    pub fn test_bulk_string() -> std::result::Result<(), RError> {
         let input = "$6\r\nfoobar\r\n".as_bytes();
         let (resp, left) = RedisProtocolParser::parse_resp(input)?;
         assert_eq!(resp, RESP::BulkString("foobar".as_bytes()));
@@ -195,7 +225,7 @@ mod test {
     }
 
     #[test]
-    pub fn test_arrays() -> std::result::Result<(), RError<'static>> {
+    pub fn test_arrays() -> std::result::Result<(), RError> {
         let input = "*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n".as_bytes();
         let (resp, left) = RedisProtocolParser::parse_resp(input)?;
         assert_eq!(
@@ -223,7 +253,7 @@ mod test {
     }
 
     #[test]
-    pub fn test_array_of_arrays() -> std::result::Result<(), RError<'static>> {
+    pub fn test_array_of_arrays() -> std::result::Result<(), RError> {
         let input = "*2\r\n*3\r\n:1\r\n:2\r\n:3\r\n*2\r\n+Foo\r\n-Bar\r\n".as_bytes();
         let (resp, left) = RedisProtocolParser::parse_resp(input)?;
         assert_eq!(
