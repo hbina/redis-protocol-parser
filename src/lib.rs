@@ -143,7 +143,7 @@ impl RedisProtocolParser {
     }
 
     fn check_crlf_at_index(input: &[u8], index: usize) -> bool {
-        input[index] == b'\r' && input[index + 1] == b'\n'
+        input.len() >= index && input[index] == b'\r' && input[index + 1] == b'\n'
     }
 
     fn check_null_value(input: &[u8]) -> bool {

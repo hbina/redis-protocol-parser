@@ -1,14 +1,12 @@
 #![feature(test)]
 extern crate bytes;
+extern crate lazy_static;
 extern crate rand;
 extern crate redis_protocol_parser;
 extern crate test;
-#[macro_use]
-extern crate lazy_static;
 
 use bytes::BufMut;
 use bytes::BytesMut;
-use rand::Rng;
 
 /// Terminating bytes between frames.
 pub const CRLF: &str = "\r\n";
@@ -49,11 +47,11 @@ pub fn rand_array(len: usize, null_every: usize, str_len: usize) -> BytesMut {
     let arr_len_digits = digits_in_number(len);
     let str_len_digits = digits_in_number(str_len);
 
-    let mut buf = BytesMut::with_capacity(
+    let buf = BytesMut::with_capacity(
         1 + arr_len_digits + 2 + (len * (1 + str_len_digits + 2 + str_len + 2)),
     );
 
-    (0..len).fold(buf, |mut buf, i| {
+    (0..len).fold(buf, |buf, i| {
         if i + 1 % null_every == 0 {
             encode_null(Some(buf))
         } else {
@@ -78,8 +76,9 @@ mod tests {
     fn bench_decode_1kb_bulkstring(b: &mut Bencher) {
         let buf = bulkstring_bytes(1024, None);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -87,8 +86,9 @@ mod tests {
     fn bench_decode_10kb_bulkstring(b: &mut Bencher) {
         let buf = bulkstring_bytes(10 * 1024, None);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -96,8 +96,9 @@ mod tests {
     fn bench_decode_100kb_bulkstring(b: &mut Bencher) {
         let buf = bulkstring_bytes(100 * 1024, None);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -105,8 +106,9 @@ mod tests {
     fn bench_decode_1mb_bulkstring(b: &mut Bencher) {
         let buf = bulkstring_bytes(1024 * 1024, None);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -114,8 +116,9 @@ mod tests {
     fn bench_decode_10mb_bulkstring(b: &mut Bencher) {
         let buf = bulkstring_bytes(10 * 1024 * 1024, None);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -125,8 +128,9 @@ mod tests {
     fn bench_decode_array_len_10_no_nulls_1k_values(b: &mut Bencher) {
         let buf = rand_array(10, 11, 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -134,8 +138,9 @@ mod tests {
     fn bench_decode_array_len_100_no_nulls_1k_values(b: &mut Bencher) {
         let buf = rand_array(100, 101, 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -143,8 +148,9 @@ mod tests {
     fn bench_decode_array_len_1000_no_nulls_1k_values(b: &mut Bencher) {
         let buf = rand_array(1000, 1001, 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -152,8 +158,9 @@ mod tests {
     fn bench_decode_array_len_10_no_nulls_10k_values(b: &mut Bencher) {
         let buf = rand_array(10, 11, 10 * 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -161,8 +168,9 @@ mod tests {
     fn bench_decode_array_len_100_no_nulls_10k_values(b: &mut Bencher) {
         let buf = rand_array(100, 101, 10 * 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -170,8 +178,9 @@ mod tests {
     fn bench_decode_array_len_1000_no_nulls_10k_values(b: &mut Bencher) {
         let buf = rand_array(1000, 1001, 10 * 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -179,8 +188,9 @@ mod tests {
     fn bench_decode_array_len_10_half_nulls_1k_values(b: &mut Bencher) {
         let buf = rand_array(10, 2, 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -188,8 +198,9 @@ mod tests {
     fn bench_decode_array_len_100_half_nulls_1k_values(b: &mut Bencher) {
         let buf = rand_array(100, 2, 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -197,8 +208,9 @@ mod tests {
     fn bench_decode_array_len_1000_half_nulls_1k_values(b: &mut Bencher) {
         let buf = rand_array(1000, 2, 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -206,8 +218,9 @@ mod tests {
     fn bench_decode_array_len_10_half_nulls_10k_values(b: &mut Bencher) {
         let buf = rand_array(10, 2, 10 * 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -215,8 +228,9 @@ mod tests {
     fn bench_decode_array_len_100_half_nulls_10k_values(b: &mut Bencher) {
         let buf = rand_array(100, 2, 10 * 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 
@@ -224,8 +238,9 @@ mod tests {
     fn bench_decode_array_len_1000_half_nulls_10k_values(b: &mut Bencher) {
         let buf = rand_array(1000, 2, 10 * 1024);
 
-        b.iter(|| {
-            black_box(decode_bytes(&buf));
+        b.iter(|| -> Result<(), Box<dyn std::error::Error>> {
+            black_box(decode_bytes(&buf)?);
+            Ok(())
         });
     }
 }
